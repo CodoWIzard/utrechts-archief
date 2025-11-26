@@ -1,20 +1,69 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { panoramaPages, panoramaInfo, type PanoramaPage } from "./data/panorama-data";
+import { panoramaTranslations } from "./data/panorama-translations";
+import { useLanguage } from "./hooks/useLanguage";
+import { translations } from "./translations";
 
 export default function Home() {
   const [zoom, setZoom] = useState(0.6);
   const [selectedPage, setSelectedPage] = useState<PanoramaPage | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [startX, setStartX] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
 
-  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.2, 3));
-  const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.2, 0.5));
+  const { language, toggleLanguage } = useLanguage();
+  const t = translations[language];
+
+  const playSound = (type: 'click' | 'scroll') => {
+    // Placeholder for sound functionality
+    // You can add actual sound files later
+  };
+
+  const handleZoomIn = () => {
+    setZoom(prev => Math.min(prev + 0.2, 3));
+    playSound('click');
+  };
+  const handleZoomOut = () => {
+    setZoom(prev => Math.max(prev - 0.2, 0.5));
+    playSound('click');
+  };
+
+  const startAutoPlay = () => {
+    setIsAutoPlaying(true);
+    playSound('click');
+  };
+
+  const stopAutoPlay = () => {
+    setIsAutoPlaying(false);
+    playSound('click');
+  };
+
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    if (isAutoPlaying && containerRef.current) {
+      interval = setInterval(() => {
+        const container = containerRef.current;
+        if (container) {
+          const maxScroll = container.scrollWidth - container.clientWidth;
+          if (container.scrollLeft >= maxScroll) {
+            container.scrollLeft = 0;
+          } else {
+            container.scrollLeft += 2;
+          }
+        }
+      }, 50);
+    }
+    return () => clearInterval(interval);
+  }, [isAutoPlaying]);
+
+
 
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
@@ -72,22 +121,38 @@ export default function Home() {
               className="rounded"
             />
             <div>
-              <h1 className="text-2xl font-bold">Panorama van Utrecht 1859</h1>
-              <p className="text-amber-200">Het Utrechts Archief - Interactieve Leporello</p>
+              <h1 className="text-2xl font-bold">{t.title}</h1>
+              <p className="text-amber-200">{t.subtitle}</p>
             </div>
           </div>
           
           {/* Controls */}
           <div className="flex gap-2">
             <button
+              onClick={toggleLanguage}
+              className="bg-amber-700 hover:bg-amber-600 px-3 py-2 rounded text-sm font-semibold"
+              aria-label="Toggle language"
+            >
+              {language.toUpperCase()}
+            </button>
+            <button
               onClick={() => setShowInstructions(true)}
               className="zoom-button bg-amber-700 hover:bg-amber-600 px-4 py-2 rounded text-sm font-semibold"
+              aria-label={t.instructions}
             >
               ?
             </button>
             <button
+              onClick={isAutoPlaying ? stopAutoPlay : startAutoPlay}
+              className="bg-amber-700 hover:bg-amber-600 px-3 py-2 rounded text-sm font-semibold"
+              aria-label={isAutoPlaying ? t.stopAutoPlay : t.autoPlay}
+            >
+              {isAutoPlaying ? '⏸' : '▶'}
+            </button>
+            <button
               onClick={handleZoomOut}
               className="zoom-button bg-amber-700 hover:bg-amber-600 px-4 py-2 rounded text-lg font-bold"
+              aria-label="Zoom out"
             >
               −
             </button>
@@ -97,6 +162,7 @@ export default function Home() {
             <button
               onClick={handleZoomIn}
               className="zoom-button bg-amber-700 hover:bg-amber-600 px-4 py-2 rounded text-lg font-bold"
+              aria-label="Zoom in"
             >
               +
             </button>
@@ -150,24 +216,18 @@ export default function Home() {
                 const getImageSrc = (pageId: string) => {
                   const imageMap: { [key: string]: string } = {
                     'page10': '/images/page10-1.png',
-                    'page27': '/images/page27.jpg',
-                    'page12': '/images/page12.png',
-                    'page23': '/images/page23.png',
-                    'page24': '/images/page24.png',
-                    'page26': '/images/page26.png',
-                    'page31': '/images/page31.png',
-                    'page32': '/images/page32.png'
+                    'page27': '/images/page27.jpg'
                   };
                   return imageMap[pageId] || `/images/${pageId}.png`;
                 };
                 
-                // Skip pages without images
+                // Skip pages 4 and 18 as they don't have main panorama images
                 const missingPages = ['page4', 'page18'];
                 if (missingPages.includes(page.id)) {
                   return null;
                 }
                 
-                const elements = [
+                return (
                   <Image
                     key={page.id}
                     src={getImageSrc(page.id)}
@@ -178,33 +238,80 @@ export default function Home() {
                     onClick={() => setSelectedPage(page)}
                     title={page.title}
                   />
-                ];
-                
-                return elements;
+                );
               })}
               
-              {/* Endpage - properly contained within the flex container */}
-              <Image
-                key="endpage"
-                src="/images/endpage.jpg"
-                alt="Einde panorama"
-                width={1455}
-                height={400}
-                className="h-[400px] object-contain cursor-pointer hover:opacity-90 transition-opacity"
-                title="Einde panorama"
-                onClick={() => setSelectedPage({
-                  id: 'endpage',
-                  catalogNumber: 'Eindpagina',
-                  title: 'Einde panorama',
-                  description: 'Dit markeert het einde van het panorama van Utrecht uit 1859.',
-                  imageUrl: '/images/endpage.jpg'
-                })}
-              />
+
             </div>
           </div>
         </div>
 
       </main>
+
+
+
+      {/* Welcome Modal */}
+      {showWelcome && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-lg w-full">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-2xl font-bold text-amber-900">
+                  {t.welcomeTitle}
+                </h2>
+                <button
+                  onClick={() => setShowWelcome(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                  aria-label={t.close}
+                >
+                  ×
+                </button>
+              </div>
+              
+              <p className="text-gray-700 mb-6 leading-relaxed">
+                {t.welcomeText}
+              </p>
+              
+              <div className="mb-6">
+                <h3 className="font-semibold text-gray-900 mb-3">{t.howToUse}</h3>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-amber-700 font-bold text-sm">1</span>
+                    </div>
+                    <p className="text-gray-700">{t.instruction1}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-amber-700 font-bold text-sm">2</span>
+                    </div>
+                    <p className="text-gray-700">{t.instruction2}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-amber-700 font-bold text-sm">3</span>
+                    </div>
+                    <p className="text-gray-700">{t.instruction3}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
+                      <span className="text-amber-700 font-bold text-sm">4</span>
+                    </div>
+                    <p className="text-gray-700">{t.instruction4}</p>
+                  </div>
+                </div>
+              </div>
+              
+              <button
+                onClick={() => setShowWelcome(false)}
+                className="w-full bg-amber-700 hover:bg-amber-600 text-white py-3 px-4 rounded-lg font-semibold transition-colors"
+              >
+                {t.startExploring}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Instructions Modal */}
       {showInstructions && (
@@ -213,7 +320,7 @@ export default function Home() {
             <div className="p-6">
               <div className="flex justify-between items-start mb-4">
                 <h2 className="text-2xl font-bold text-amber-900">
-                  Instructies
+                  {t.instructions}
                 </h2>
                 <button
                   onClick={() => setShowInstructions(false)}
@@ -228,28 +335,28 @@ export default function Home() {
                   <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
                     <span className="text-amber-700 font-bold">1</span>
                   </div>
-                  <p className="text-gray-700">Scroll horizontaal door het panorama</p>
+                  <p className="text-gray-700">{t.instruction1}</p>
                 </div>
                 
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
                     <span className="text-amber-700 font-bold">2</span>
                   </div>
-                  <p className="text-gray-700">Gebruik + en − om in/uit te zoomen</p>
+                  <p className="text-gray-700">{t.instruction2}</p>
                 </div>
                 
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
                     <span className="text-amber-700 font-bold">3</span>
                   </div>
-                  <p className="text-gray-700">Klik op afbeeldingen voor historische informatie</p>
+                  <p className="text-gray-700">{t.instruction3}</p>
                 </div>
                 
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center">
-                    <span className="text-amber-700 font-bold">?</span>
+                    <span className="text-amber-700 font-bold">4</span>
                   </div>
-                  <p className="text-gray-700">Klik op ? voor deze instructies</p>
+                  <p className="text-gray-700">{t.instruction4}</p>
                 </div>
               </div>
             </div>
@@ -259,15 +366,17 @@ export default function Home() {
 
       {/* Page Info Modal */}
       {selectedPage && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setSelectedPage(null)}>
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-6">
               <div className="flex justify-between items-start mb-4">
                 <div>
                   <h2 className="text-2xl font-bold text-amber-900">
-                    {selectedPage.title}
+                    {language === 'en' && panoramaTranslations.en[selectedPage.id as keyof typeof panoramaTranslations.en]?.title 
+                      ? panoramaTranslations.en[selectedPage.id as keyof typeof panoramaTranslations.en].title 
+                      : selectedPage.title}
                   </h2>
-                  <p className="text-sm text-amber-600">Catalogusnummer: {selectedPage.catalogNumber}</p>
+                  <p className="text-sm text-amber-600">{t.catalogNumber} {selectedPage.catalogNumber}</p>
                 </div>
                 <button
                   onClick={() => setSelectedPage(null)}
@@ -282,14 +391,7 @@ export default function Home() {
                   src={(() => {
                     const imageMap: { [key: string]: string } = {
                       'page10': '/images/page10-1.png',
-                      'page27': '/images/page27.jpg',
-                      'page12': '/images/page12.png',
-                      'page23': '/images/page23.png',
-                      'page24': '/images/page24.png',
-                      'page26': '/images/page26.png',
-                      'page31': '/images/page31.png',
-                      'page32': '/images/page32.png',
-                      'endpage': '/images/endpage.jpg'
+                      'page27': '/images/page27.jpg'
                     };
                     return imageMap[selectedPage.id] || `/images/${selectedPage.id}.png`;
                   })()}
@@ -301,27 +403,36 @@ export default function Home() {
               </div>
               
               <p className="text-gray-700 leading-relaxed mb-4">
-                {selectedPage.description}
+                {language === 'en' && panoramaTranslations.en[selectedPage.id as keyof typeof panoramaTranslations.en]?.description 
+                  ? panoramaTranslations.en[selectedPage.id as keyof typeof panoramaTranslations.en].description 
+                  : selectedPage.description}
               </p>
               
               {selectedPage.additionalInfo && (
                 <div className="bg-amber-50 p-4 rounded border-l-4 border-amber-400 mb-4">
-                  <h4 className="font-semibold text-amber-900 mb-2">Aanvullende informatie:</h4>
-                  <p className="text-gray-700 text-sm">{selectedPage.additionalInfo}</p>
+                  <h4 className="font-semibold text-amber-900 mb-2">{t.additionalInfo}</h4>
+                  <p className="text-gray-700 text-sm">
+                    {language === 'en' && panoramaTranslations.en[selectedPage.id as keyof typeof panoramaTranslations.en]?.additionalInfo 
+                      ? panoramaTranslations.en[selectedPage.id as keyof typeof panoramaTranslations.en].additionalInfo 
+                      : selectedPage.additionalInfo}
+                  </p>
                 </div>
               )}
               
               {selectedPage.additionalImages && selectedPage.additionalImages.length > 0 && (
                 <div className="space-y-4">
-                  <h4 className="font-semibold text-amber-900">Aanvullende afbeeldingen:</h4>
+                  <h4 className="font-semibold text-amber-900">{t.additionalImages}</h4>
                   {selectedPage.additionalImages.map((img, index) => (
                     <div key={index} className="bg-gray-50 p-4 rounded">
-                      <Image
+                      <img
                         src={img.url}
                         alt={img.description}
-                        width={300}
-                        height={200}
                         className="w-full max-w-sm mx-auto rounded border object-contain mb-2"
+                        style={{ maxHeight: '200px' }}
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                        }}
                       />
                       <p className="text-gray-700 text-sm mb-2">{img.description}</p>
                       <a 
@@ -330,7 +441,7 @@ export default function Home() {
                         rel="noopener noreferrer"
                         className="text-amber-600 hover:text-amber-800 text-sm underline"
                       >
-                        Bekijk afbeelding →
+                        {t.viewImage}
                       </a>
                     </div>
                   ))}
@@ -344,7 +455,7 @@ export default function Home() {
                   rel="noopener noreferrer"
                   className="text-amber-600 hover:text-amber-800 underline"
                 >
-                  Bekijk originele afbeelding in Het Utrechts Archief →
+                  {t.viewOriginal}
                 </a>
               </div>
             </div>
