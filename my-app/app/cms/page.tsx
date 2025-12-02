@@ -75,7 +75,7 @@ function EditModal({ page, onSave, onClose }: {
                 type="text"
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
                 required
               />
             </div>
@@ -88,7 +88,7 @@ function EditModal({ page, onSave, onClose }: {
                 type="text"
                 value={formData.catalogNumber}
                 onChange={(e) => setFormData({ ...formData, catalogNumber: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
                 required
               />
             </div>
@@ -101,7 +101,7 @@ function EditModal({ page, onSave, onClose }: {
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
                 required
               />
             </div>
@@ -115,7 +115,7 @@ function EditModal({ page, onSave, onClose }: {
                   type="url"
                   value={formData.imageUrl}
                   onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
                   placeholder="Image URL or upload a new image below"
                   required
                 />
@@ -191,7 +191,7 @@ function EditModal({ page, onSave, onClose }: {
                 value={formData.additionalInfo || ''}
                 onChange={(e) => setFormData({ ...formData, additionalInfo: e.target.value })}
                 rows={3}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900"
               />
             </div>
 
@@ -223,10 +223,13 @@ export default function CMSPage() {
   const [editingPage, setEditingPage] = useState<PanoramaPage | null>(null);
   const [saving, setSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [archivedPages, setArchivedPages] = useState<any[]>([]);
+  const [showArchive, setShowArchive] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     fetchPages();
+    fetchArchivedPages();
   }, []);
 
   const fetchPages = async () => {
@@ -238,6 +241,16 @@ export default function CMSPage() {
       console.error('Failed to fetch pages:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchArchivedPages = async () => {
+    try {
+      const response = await fetch('/api/cms/archive');
+      const data = await response.json();
+      setArchivedPages(data.archivedPages || []);
+    } catch (error) {
+      console.error('Failed to fetch archived pages:', error);
     }
   };
 
@@ -299,7 +312,7 @@ export default function CMSPage() {
 
   const addNewPage = () => {
     const newPage: PanoramaPage = {
-      id: `page${Date.now()}`,
+      id: `page_${Date.now()}`,
       catalogNumber: '',
       title: '',
       description: '',
@@ -329,21 +342,53 @@ export default function CMSPage() {
   };
 
   const deletePage = async (pageId: string) => {
-    if (!confirm('Are you sure you want to delete this page?')) return;
+    if (!confirm('Are you sure you want to delete this page? It will be moved to archive.')) return;
     
     try {
-      const updatedPages = pages.filter(page => page.id !== pageId);
-      
-      await fetch('/api/cms/pages', {
-        method: 'PUT',
+      const response = await fetch('/api/cms/delete', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pages: updatedPages }),
+        body: JSON.stringify({ pageId }),
       });
       
-      setPages(updatedPages);
-      alert('Page deleted successfully!');
+      if (response.ok) {
+        setPages(pages.filter(page => page.id !== pageId));
+        fetchArchivedPages();
+        alert('Page moved to archive successfully!');
+      } else {
+        alert('Failed to delete page');
+      }
     } catch (error) {
       alert('Failed to delete page');
+    }
+  };
+
+  const restorePage = async (pageId: string) => {
+    try {
+      const response = await fetch('/api/cms/archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageId }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const updatedPages = [...pages, data.restoredPage];
+        
+        await fetch('/api/cms/pages', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pages: updatedPages }),
+        });
+        
+        setPages(updatedPages);
+        fetchArchivedPages();
+        alert('Page restored successfully!');
+      } else {
+        alert('Failed to restore page');
+      }
+    } catch (error) {
+      alert('Failed to restore page');
     }
   };
 
@@ -366,6 +411,12 @@ export default function CMSPage() {
               className="bg-amber-700 hover:bg-amber-600 text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
             >
               Add Page
+            </button>
+            <button
+              onClick={() => setShowArchive(!showArchive)}
+              className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
+            >
+              {showArchive ? 'Hide Archive' : `Archive (${archivedPages.length})`}
             </button>
             <button
               onClick={saveOrder}
@@ -505,6 +556,39 @@ export default function CMSPage() {
             </div>
           ))}
         </div>
+
+        {showArchive && (
+          <div className="mt-12">
+            <h2 className="text-2xl font-semibold text-slate-800 mb-6">
+              Archived Pages ({archivedPages.length})
+            </h2>
+            <div className="space-y-4">
+              {archivedPages.map((page) => (
+                <div key={page.id} className="bg-red-50 p-6 rounded-xl shadow-sm border border-red-200">
+                  <div className="flex items-start gap-6">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-xl font-semibold text-slate-800 mb-2">{page.title}</h3>
+                      <p className="text-sm text-slate-500 mb-2">{page.catalogNumber}</p>
+                      <p className="text-slate-600 leading-relaxed line-clamp-2 mb-2">{page.description}</p>
+                      <p className="text-xs text-red-600">Deleted: {new Date(page.deletedAt).toLocaleDateString()}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => restorePage(page.id)}
+                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {archivedPages.length === 0 && (
+                <p className="text-slate-500 text-center py-8">No archived pages</p>
+              )}
+            </div>
+          </div>
+        )}
       </main>
 
       <EditModal
