@@ -27,5 +27,8 @@ export async function authenticateUser(username: string, password: string): Prom
   const adminUsername = process.env.ADMIN_USERNAME || 'admin';
   const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
   
+  console.log('Expected:', { adminUsername, adminPassword });
+  console.log('Received:', { username, password });
+  
   return username === adminUsername && password === adminPassword;
 }

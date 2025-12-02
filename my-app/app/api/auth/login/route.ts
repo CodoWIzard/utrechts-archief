@@ -9,7 +9,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Username and password required' }, { status: 400 });
     }
 
+    console.log('Login attempt:', { username, password });
     const isValid = await authenticateUser(username, password);
+    console.log('Auth result:', isValid);
 
     if (!isValid) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });

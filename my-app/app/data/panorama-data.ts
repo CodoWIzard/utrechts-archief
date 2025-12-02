@@ -18,7 +18,8 @@ export const panoramaPages: PanoramaPage[] = [
     "title": "Titelblad Panorama van Utrecht",
     "description": "Afbeelding van de titelpagina van het Panorama van Utrecht, op de lithostenen getekend door J. Bos, gedrukt bij P.W. van de Weijer en in juli 1859 uitgegeven door de Wed. Herfkens en zoon.",
     "imageUrl": "https://hetutrechtsarchief.nl/beeld/10AA76F512755EEF8B2AB912E7310E9D",
-    "additionalInfo": "Het Panorama van Utrecht bestaat uit vier aaneengeplakte, zigzag gevouwen bladen met een totale lengte van 5,82 meter. Het panorama is een meterslange tekening van een rondwandeling om het centrum van Utrecht, met steeds wisselend uitzicht vanaf de singels. Het geeft een heel precies beeld van hoe de stad in 1859 er uitzag en het leuke is dat je ook het verloop van de seizoenen in de tekening terugziet."
+    "additionalInfo": "Het Panorama van Utrecht bestaat uit vier aaneengeplakte, zigzag gevouwen bladen met een totale lengte van 5,82 meter. Het panorama is een meterslange tekening van een rondwandeling om het centrum van Utrecht, met steeds wisselend uitzicht vanaf de singels. Het geeft een heel precies beeld van hoe de stad in 1859 er uitzag en het leuke is dat je ook het verloop van de seizoenen in de tekening terugziet.",
+    "originalIndex": 0
   },
   {
     "id": "page2",

@@ -6,6 +6,8 @@ import { panoramaPages, panoramaInfo, type PanoramaPage } from "./data/panorama-
 import { panoramaTranslations } from "./data/panorama-translations";
 import { useLanguage } from "./hooks/useLanguage";
 import { translations } from "./translations";
+import { useNotification } from "./hooks/useNotification";
+import NotificationContainer from "./components/NotificationContainer";
 
 export default function Home() {
   const [zoom, setZoom] = useState(0.6);
@@ -20,6 +22,7 @@ export default function Home() {
 
   const { language, toggleLanguage } = useLanguage();
   const t = translations[language];
+  const { notifications, addNotification, removeNotification } = useNotification();
 
   const playSound = (type: 'click' | 'scroll') => {
     // Placeholder for sound functionality
@@ -212,7 +215,6 @@ export default function Home() {
               />
               
               {panoramaPages.map((page, index) => {
-                // Use available images in different formats
                 const getImageSrc = (pageId: string) => {
                   const imageMap: { [key: string]: string } = {
                     'page10': '/images/page10-1.png',
@@ -221,7 +223,6 @@ export default function Home() {
                   return imageMap[pageId] || `/images/${pageId}.png`;
                 };
                 
-                // Skip pages 4 and 18 as they don't have main panorama images
                 const missingPages = ['page4', 'page18'];
                 if (missingPages.includes(page.id)) {
                   return null;
@@ -248,7 +249,10 @@ export default function Home() {
 
       </main>
 
-
+      <NotificationContainer 
+        notifications={notifications} 
+        onRemove={removeNotification} 
+      />
 
       {/* Welcome Modal */}
       {showWelcome && (

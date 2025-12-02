@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { PanoramaPage } from '../data/panorama-data';
+import { useNotification } from '../hooks/useNotification';
+import NotificationContainer from '../components/NotificationContainer';
 
 function EditModal({ page, onSave, onClose }: {
   page: PanoramaPage | null;
@@ -11,6 +13,7 @@ function EditModal({ page, onSave, onClose }: {
 }) {
   const [formData, setFormData] = useState<PanoramaPage | null>(null);
   const [uploading, setUploading] = useState(false);
+  const { addNotification } = useNotification();
 
   useEffect(() => {
     if (page) {
@@ -35,11 +38,25 @@ function EditModal({ page, onSave, onClose }: {
       if (response.ok) {
         const { imageUrl } = await response.json();
         setFormData({ ...formData, imageUrl });
+        addNotification({
+          type: 'success',
+          title: 'Upload Complete',
+          message: 'Image uploaded successfully!'
+        });
       } else {
-        alert('Upload failed');
+        const errorData = await response.json();
+        addNotification({
+          type: 'error',
+          title: 'Upload Failed',
+          message: errorData.error || 'Failed to upload image. Please try again.'
+        });
       }
     } catch (error) {
-      alert('Upload error');
+      addNotification({
+        type: 'error',
+        title: 'Upload Error',
+        message: 'Network error occurred during upload. Please try again.'
+      });
     } finally {
       setUploading(false);
     }
@@ -225,7 +242,9 @@ export default function CMSPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [archivedPages, setArchivedPages] = useState<any[]>([]);
   const [showArchive, setShowArchive] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, pageId: string, title: string}>({show: false, pageId: '', title: ''});
   const router = useRouter();
+  const { notifications, addNotification, removeNotification } = useNotification();
 
   useEffect(() => {
     fetchPages();
@@ -234,9 +253,9 @@ export default function CMSPage() {
 
   const fetchPages = async () => {
     try {
-      const response = await fetch('/api/cms/pages');
-      const data = await response.json();
-      setPages(data.pages || []);
+      delete require.cache[require.resolve('../data/panorama-data')];
+      const { panoramaPages } = require('../data/panorama-data');
+      setPages([...panoramaPages]);
     } catch (error) {
       console.error('Failed to fetch pages:', error);
     } finally {
@@ -254,11 +273,14 @@ export default function CMSPage() {
     }
   };
 
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+
   const moveUp = (index: number) => {
     if (index === 0) return;
     const newPages = [...pages];
     [newPages[index], newPages[index - 1]] = [newPages[index - 1], newPages[index]];
     setPages(newPages);
+    setHasUnsavedChanges(true);
   };
 
   const moveDown = (index: number) => {
@@ -266,20 +288,29 @@ export default function CMSPage() {
     const newPages = [...pages];
     [newPages[index], newPages[index + 1]] = [newPages[index + 1], newPages[index]];
     setPages(newPages);
+    setHasUnsavedChanges(true);
   };
 
   const saveOrder = async () => {
     setSaving(true);
     try {
-      const pageIds = pages.map(page => page.id);
-      await fetch('/api/cms/reorder', {
-        method: 'POST',
+      await fetch('/api/cms/pages', {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageIds }),
+        body: JSON.stringify({ pages }),
       });
-      alert('Order saved successfully!');
+      setHasUnsavedChanges(false);
+      addNotification({
+        type: 'success',
+        title: 'Order Saved',
+        message: 'Page order has been saved successfully!'
+      });
     } catch (error) {
-      alert('Failed to save order');
+      addNotification({
+        type: 'error',
+        title: 'Save Failed',
+        message: 'Failed to save page order. Please try again.'
+      });
     } finally {
       setSaving(false);
     }
@@ -299,9 +330,17 @@ export default function CMSPage() {
       
       setPages(updatedPages);
       setEditingPage(null);
-      alert('Page updated successfully!');
+      addNotification({
+        type: 'success',
+        title: 'Page Updated',
+        message: `"${updatedPage.title}" has been updated successfully!`
+      });
     } catch (error) {
-      alert('Failed to update page');
+      addNotification({
+        type: 'error',
+        title: 'Update Failed',
+        message: 'Failed to update page. Please try again.'
+      });
     }
   };
 
@@ -335,35 +374,65 @@ export default function CMSPage() {
       setPages(updatedPages);
       setEditingPage(null);
       setShowAddModal(false);
-      alert('Page added successfully!');
+      addNotification({
+        type: 'success',
+        title: 'Page Added',
+        message: `"${newPage.title}" has been added successfully!`
+      });
     } catch (error) {
-      alert('Failed to add page');
+      addNotification({
+        type: 'error',
+        title: 'Add Failed',
+        message: 'Failed to add new page. Please try again.'
+      });
     }
   };
 
-  const deletePage = async (pageId: string) => {
-    if (!confirm('Are you sure you want to delete this page? It will be moved to archive.')) return;
+  const showDeleteConfirm = (pageId: string) => {
+    const page = pages.find(p => p.id === pageId);
+    setDeleteConfirm({show: true, pageId, title: page?.title || 'Page'});
+  };
+
+  const deletePage = async () => {
+    const { pageId } = deleteConfirm;
+    const pageToDelete = pages.find(p => p.id === pageId);
+    const pageIndex = pages.findIndex(p => p.id === pageId);
+    setDeleteConfirm({show: false, pageId: '', title: ''});
     
     try {
       const response = await fetch('/api/cms/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageId }),
+        body: JSON.stringify({ pageId, originalIndex: pageIndex }),
       });
       
       if (response.ok) {
         setPages(pages.filter(page => page.id !== pageId));
-        fetchArchivedPages();
-        alert('Page moved to archive successfully!');
+        await fetchArchivedPages();
+        addNotification({
+          type: 'success',
+          title: 'Page Archived',
+          message: `"${pageToDelete?.title || 'Page'}" has been moved to archive.`
+        });
       } else {
-        alert('Failed to delete page');
+        const errorData = await response.json();
+        addNotification({
+          type: 'error',
+          title: 'Delete Failed',
+          message: errorData.details || errorData.error || 'Failed to delete page. Please try again.'
+        });
       }
     } catch (error) {
-      alert('Failed to delete page');
+      addNotification({
+        type: 'error',
+        title: 'Delete Error',
+        message: 'Network error occurred while deleting page. Please check your connection and try again.'
+      });
     }
   };
 
   const restorePage = async (pageId: string) => {
+    const pageToRestore = archivedPages.find(p => p.id === pageId);
     try {
       const response = await fetch('/api/cms/archive', {
         method: 'POST',
@@ -373,7 +442,9 @@ export default function CMSPage() {
       
       if (response.ok) {
         const data = await response.json();
-        const updatedPages = [...pages, data.restoredPage];
+        const originalIndex = data.restoredPage.originalIndex || pages.length;
+        const updatedPages = [...pages];
+        updatedPages.splice(originalIndex, 0, data.restoredPage);
         
         await fetch('/api/cms/pages', {
           method: 'PUT',
@@ -383,12 +454,26 @@ export default function CMSPage() {
         
         setPages(updatedPages);
         fetchArchivedPages();
-        alert('Page restored successfully!');
+        setShowArchive(false);
+        addNotification({
+          type: 'success',
+          title: 'Page Restored',
+          message: `"${pageToRestore?.title || 'Page'}" has been restored successfully!`
+        });
       } else {
-        alert('Failed to restore page');
+        const errorData = await response.json();
+        addNotification({
+          type: 'error',
+          title: 'Restore Failed',
+          message: errorData.error || 'Failed to restore page. Please try again.'
+        });
       }
     } catch (error) {
-      alert('Failed to restore page');
+      addNotification({
+        type: 'error',
+        title: 'Restore Error',
+        message: 'Network error occurred while restoring page. Please try again.'
+      });
     }
   };
 
@@ -413,17 +498,21 @@ export default function CMSPage() {
               Add Page
             </button>
             <button
-              onClick={() => setShowArchive(!showArchive)}
+              onClick={() => setShowArchive(true)}
               className="bg-gray-700 hover:bg-gray-600 text-white px-5 py-2.5 rounded-lg font-medium transition-colors"
             >
-              {showArchive ? 'Hide Archive' : `Archive (${archivedPages.length})`}
+              Archive ({archivedPages.length})
             </button>
             <button
               onClick={saveOrder}
-              disabled={saving}
-              className="bg-amber-800 hover:bg-amber-700 text-white px-5 py-2.5 rounded-lg font-medium disabled:opacity-50 transition-colors"
+              disabled={saving || !hasUnsavedChanges}
+              className={`px-5 py-2.5 rounded-lg font-medium transition-colors ${
+                hasUnsavedChanges 
+                  ? 'bg-amber-800 hover:bg-amber-700 text-white' 
+                  : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+              } disabled:opacity-50`}
             >
-              {saving ? 'Saving...' : 'Save Order'}
+              {saving ? 'Saving...' : hasUnsavedChanges ? 'Save Changes' : 'No Changes'}
             </button>
             <button
               onClick={handleLogout}
@@ -449,43 +538,27 @@ export default function CMSPage() {
           {pages.map((page, index) => (
             <div 
               key={page.id} 
-              className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow cursor-move"
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.setData('text/plain', index.toString());
-                e.currentTarget.style.opacity = '0.5';
-              }}
-              onDragEnd={(e) => {
-                e.currentTarget.style.opacity = '1';
-              }}
-              onDragOver={(e) => {
-                e.preventDefault();
-                e.currentTarget.style.backgroundColor = '#fef3c7';
-              }}
-              onDragLeave={(e) => {
-                e.currentTarget.style.backgroundColor = 'white';
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.currentTarget.style.backgroundColor = 'white';
-                const dragIndex = parseInt(e.dataTransfer.getData('text/plain'));
-                const hoverIndex = index;
-                if (dragIndex !== hoverIndex) {
-                  const newPages = [...pages];
-                  const draggedItem = newPages[dragIndex];
-                  newPages.splice(dragIndex, 1);
-                  newPages.splice(hoverIndex, 0, draggedItem);
-                  setPages(newPages);
-                }
-              }}
+              className="bg-white p-6 rounded-xl shadow-sm hover:shadow-md transition-shadow"
             >
               <div className="flex items-start gap-6">
                 <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center cursor-grab hover:bg-amber-200 transition-colors">
-                    <svg className="w-4 h-4 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
-                    </svg>
-                  </div>
+                  <input
+                    type="number"
+                    value={index + 1}
+                    onChange={(e) => {
+                      const newOrder = parseInt(e.target.value) - 1;
+                      if (newOrder >= 0 && newOrder < pages.length && newOrder !== index) {
+                        const newPages = [...pages];
+                        const [movedPage] = newPages.splice(index, 1);
+                        newPages.splice(newOrder, 0, movedPage);
+                        setPages(newPages);
+                        setHasUnsavedChanges(true);
+                      }
+                    }}
+                    className="w-16 h-8 text-center border border-amber-300 rounded bg-amber-50 text-amber-800 font-semibold"
+                    min="1"
+                    max={pages.length}
+                  />
                 </div>
                 <div className="flex-shrink-0">
                   <img
@@ -546,7 +619,7 @@ export default function CMSPage() {
                     Edit
                   </button>
                   <button
-                    onClick={() => deletePage(page.id)}
+                    onClick={() => showDeleteConfirm(page.id)}
                     className="text-red-600 hover:text-red-700 font-medium transition-colors"
                   >
                     Delete
@@ -557,39 +630,84 @@ export default function CMSPage() {
           ))}
         </div>
 
-        {showArchive && (
-          <div className="mt-12">
-            <h2 className="text-2xl font-semibold text-slate-800 mb-6">
-              Archived Pages ({archivedPages.length})
-            </h2>
-            <div className="space-y-4">
-              {archivedPages.map((page) => (
-                <div key={page.id} className="bg-red-50 p-6 rounded-xl shadow-sm border border-red-200">
-                  <div className="flex items-start gap-6">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-xl font-semibold text-slate-800 mb-2">{page.title}</h3>
-                      <p className="text-sm text-slate-500 mb-2">{page.catalogNumber}</p>
-                      <p className="text-slate-600 leading-relaxed line-clamp-2 mb-2">{page.description}</p>
-                      <p className="text-xs text-red-600">Deleted: {new Date(page.deletedAt).toLocaleDateString()}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => restorePage(page.id)}
-                        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
-                      >
-                        Restore
-                      </button>
+
+      </main>
+
+      <NotificationContainer 
+        notifications={notifications} 
+        onRemove={removeNotification} 
+      />
+
+      {/* Archive Modal */}
+      {showArchive && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-8">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">Archived Pages ({archivedPages.length})</h2>
+                <button
+                  onClick={() => setShowArchive(false)}
+                  className="text-gray-500 hover:text-gray-700 text-2xl"
+                >
+                  ×
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {archivedPages.map((page) => (
+                  <div key={page.id} className="bg-red-50 p-6 rounded-xl shadow-sm border border-red-200">
+                    <div className="flex items-start gap-6">
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-xl font-semibold text-slate-800 mb-2">{page.title}</h3>
+                        <p className="text-sm text-slate-500 mb-2">{page.catalogNumber}</p>
+                        <p className="text-slate-600 leading-relaxed line-clamp-2 mb-2">{page.description}</p>
+                        <p className="text-xs text-red-600">Deleted: {new Date(page.deletedAt).toLocaleDateString()}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => restorePage(page.id)}
+                          className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium transition-colors"
+                        >
+                          Restore
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-              {archivedPages.length === 0 && (
-                <p className="text-slate-500 text-center py-8">No archived pages</p>
-              )}
+                ))}
+                {archivedPages.length === 0 && (
+                  <p className="text-slate-500 text-center py-8">No archived pages</p>
+                )}
+              </div>
             </div>
           </div>
-        )}
-      </main>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm.show && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Delete</h3>
+            <p className="text-gray-700 mb-6">
+              Are you sure you want to delete "{deleteConfirm.title}"? It will be moved to the archive.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setDeleteConfirm({show: false, pageId: '', title: ''})}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={deletePage}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <EditModal
         page={editingPage}
