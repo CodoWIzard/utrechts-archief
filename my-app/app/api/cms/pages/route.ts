@@ -14,16 +14,9 @@ function isAuthenticated(request: NextRequest): boolean {
 
 export async function GET() {
   try {
-    const fileContent = fs.readFileSync(dataPath, 'utf8');
-    const pagesMatch = fileContent.match(/export const panoramaPages: PanoramaPage\[\] = (\[[\s\S]*?\]);/);
-    
-    if (!pagesMatch) {
-      return NextResponse.json({ error: 'Could not parse pages data' }, { status: 500 });
-    }
-
-    // Simple parsing - in production, use a proper parser
-    const pagesData = eval(pagesMatch[1]);
-    return NextResponse.json({ pages: pagesData });
+    delete require.cache[require.resolve('../../../data/panorama-data')];
+    const { panoramaPages } = require('../../../data/panorama-data');
+    return NextResponse.json({ pages: panoramaPages });
   } catch (error) {
     return NextResponse.json({ error: 'Failed to read pages data' }, { status: 500 });
   }

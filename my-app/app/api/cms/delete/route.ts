@@ -8,27 +8,58 @@ const archivePath = path.join(process.cwd(), 'app', 'data', 'panorama-archive.ts
 
 function isAuthenticated(request: NextRequest): boolean {
   const token = request.cookies.get('auth-token')?.value;
-  if (!token) return false;
-  return verifyToken(token) !== null;
+  if (!token) {
+    console.log('No auth token found');
+    return false;
+  }
+  const verified = verifyToken(token);
+  console.log('Token verification result:', verified);
+  return verified !== null;
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAuthenticated(request)) {
+  const authResult = isAuthenticated(request);
+  console.log('Authentication result:', authResult);
+  if (!authResult) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const { pageId } = await request.json();
+    const { pageId, originalIndex } = await request.json();
     
-    // Get current pages
-    let dataFileContent = fs.readFileSync(dataPath, 'utf8');
-    const pagesMatch = dataFileContent.match(/export const panoramaPages: PanoramaPage\[\] = (\[[\s\S]*?\]);/);
-    
-    if (!pagesMatch) {
-      return NextResponse.json({ error: 'Could not parse pages data' }, { status: 500 });
+    if (!pageId) {
+      return NextResponse.json({ error: 'Page ID is required' }, { status: 400 });
     }
+    
+    // Check if files exist
+    if (!fs.existsSync(dataPath)) {
+      return NextResponse.json({ error: 'Data file not found' }, { status: 500 });
+    }
+    
+    if (!fs.existsSync(archivePath)) {
+      // Create archive file if it doesn't exist
+      const archiveTemplate = `export interface ArchivedPage {
+  id: string;
+  catalogNumber: string;
+  title: string;
+  description: string;
+  imageUrl: string;
+  additionalInfo?: string;
+  additionalImages?: Array<{
+    url: string;
+    description: string;
+  }>;
+  deletedAt: string;
+  deletedBy: string;
+}
 
-    const currentPages = eval(pagesMatch[1]);
+export const archivedPages: ArchivedPage[] = [];`;
+      fs.writeFileSync(archivePath, archiveTemplate);
+    }
+    
+    // Import current pages directly  
+    delete require.cache[require.resolve('../../../data/panorama-data')];
+    const { panoramaPages: currentPages } = require('../../../data/panorama-data');
     const pageToDelete = currentPages.find((page: any) => page.id === pageId);
     
     if (!pageToDelete) {
@@ -44,18 +75,25 @@ export async function POST(request: NextRequest) {
     
     let archivedPages = [];
     if (archiveMatch) {
-      archivedPages = eval(archiveMatch[1]);
+      try {
+        archivedPages = eval(archiveMatch[1]);
+      } catch (evalError) {
+        console.error('Error parsing archived pages:', evalError);
+        archivedPages = [];
+      }
     }
 
     const archivedPage = {
       ...pageToDelete,
       deletedAt: new Date().toISOString(),
-      deletedBy: 'admin'
+      deletedBy: 'admin',
+      originalIndex
     };
     
     archivedPages.push(archivedPage);
     
-    // Update both files
+    // Update data file
+    let dataFileContent = fs.readFileSync(dataPath, 'utf8');
     const newPagesString = `export const panoramaPages: PanoramaPage[] = ${JSON.stringify(updatedPages, null, 2)};`;
     dataFileContent = dataFileContent.replace(
       /export const panoramaPages: PanoramaPage\[\] = \[[\s\S]*?\];/,
@@ -68,11 +106,21 @@ export async function POST(request: NextRequest) {
       newArchiveString
     );
     
-    fs.writeFileSync(dataPath, dataFileContent);
-    fs.writeFileSync(archivePath, archiveFileContent);
+    // Write files with error handling
+    try {
+      fs.writeFileSync(dataPath, dataFileContent);
+      fs.writeFileSync(archivePath, archiveFileContent);
+    } catch (writeError) {
+      console.error('Error writing files:', writeError);
+      return NextResponse.json({ error: 'Failed to save changes to disk' }, { status: 500 });
+    }
     
     return NextResponse.json({ success: true, archivedPage });
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to delete page' }, { status: 500 });
+    console.error('Delete page error:', error);
+    return NextResponse.json({ 
+      error: 'Failed to delete page', 
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 });
   }
 }
